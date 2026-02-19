@@ -1,6 +1,6 @@
 # ⭐ Star-Correction: Multi-Task BERT for Sentiment & Star Rating
 
-Multi-task learning pipeline that simultaneously predicts **sentiment** (Positive / Neutral / Negative) and **corrected star rating** (1–5) from Google Maps review texts, utilizing a shared BERT encoder with two independent classification heads dedicated to each task.
+Multi-task learning pipeline that simultaneously predicts **sentiment** (Positive / Neutral / Negative) and **corrected star rating** (1–5) from Google Maps review texts of tourist attractions in the Malang region, utilizing a shared BERT encoder with two independent classification heads dedicated to each task.
 
 ---
 
