@@ -60,10 +60,10 @@ Multi-task learning pipeline that simultaneously predicts **sentiment** (Positiv
   │  Linear(768→3)  │  │  Linear(768→5)  │
   │                 │  │                 │
   │ Negative        │  │ ⭐ 1            │
-  │ Neutral         │  │ ⭐⭐ 2           │
-  │ Positive        │  │ ⭐⭐⭐ 3          │
-  │                 │  │ ⭐⭐⭐⭐ 4         │
-  │                 │  │ ⭐⭐⭐⭐⭐ 5        │
+  │ Neutral         │  │ ⭐⭐ 2          │
+  │ Positive        │  │ ⭐⭐⭐ 3        │
+  │                 │  │ ⭐⭐⭐⭐ 4      │
+  │                 │  │ ⭐⭐⭐⭐⭐ 5    │
   └─────────────────┘  └─────────────────┘
 ```
 
