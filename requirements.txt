@@ -1,10 +1,10 @@
-torch>=2.0.0
+# torch di-install terpisah di Dockerfile (CPU-only dari PyTorch index)
 transformers>=4.30.0
-pandas>=2.0.0
 numpy>=1.24.0
-scikit-learn>=1.3.0
-matplotlib>=3.7.0
-seaborn>=0.12.0
-mlflow>=2.8.0
-optuna>=3.4.0
-tqdm>=4.65.0
+pandas>=2.0.0      # optional, cuma kalo butuh dataframes
+scikit-learn>=1.3.0 # optional, kalo cuma inference model BERT mungkin ga perlu
+mlflow>=2.8.0      # kalo lo mau track metrics
+optuna>=3.4.0      # optional, kalo ga tuning, bisa skip
+fastapi>=0.104.0
+uvicorn>=0.24.0
+streamlit>=1.0.0

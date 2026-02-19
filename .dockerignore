@@ -1,0 +1,25 @@
+# ── Build/Runtime ─────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# ── Data & model (will be mounted as volume) ─────
+data/
+notebook/
+mlruns/
+mlflow.db
+outputs/
+
+# ── IDE / OS ──────────────────────────────────────
+.idea/
+.vscode/
+.venv/
+.env
+.git/
+.gitignore
+*.md
