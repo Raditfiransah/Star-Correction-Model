@@ -27,44 +27,57 @@ Multi-task learning pipeline that simultaneously predicts **sentiment** (Positiv
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Input Review Text                     │
-│           "Tempat wisata yang sangat bagus!"             │
-└──────────────────────┬──────────────────────────────────┘
-                       │
-                       ▼
-            ┌─────────────────────┐
-            │     Tokenizer       │
-            │  (IndoBERT BPE)     │
-            │  max_len = 128      │
-            └─────────┬───────────┘
-                      │
-          ┌───────────▼───────────┐
-          │                       │
-          │   IndoBERT Encoder    │
-          │   (Shared Backbone)   │
-          │   768-dim hidden      │
-          │                       │
-          └───────────┬───────────┘
-                      │
-              ┌───────▼───────┐
-              │    Dropout    │
-              │    (0.3)      │
-              └───────┬───────┘
-                      │
-           ┌──────────┴──────────┐
-           │                     │
-           ▼                     ▼
-  ┌─────────────────┐  ┌─────────────────┐
-  │ Sentiment Head  │  │   Star Head     │
-  │  Linear(768→3)  │  │  Linear(768→5)  │
-  │                 │  │                 │
-  │ Negative        │  │ ⭐ 1            │
-  │ Neutral         │  │ ⭐⭐ 2          │
-  │ Positive        │  │ ⭐⭐⭐ 3        │
-  │                 │  │ ⭐⭐⭐⭐ 4      │
-  │                 │  │ ⭐⭐⭐⭐⭐ 5    │
-  └─────────────────┘  └─────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                         Input Layer                             │
+│                                                                 │
+│   Text: "Tempat wisata yang sangat bagus!"    Star Input: ⭐⭐⭐⭐⭐│
+└──────────────────┬──────────────────────────────────┬──────────┘
+                   │                                  │
+                   ▼                                  ▼
+        ┌─────────────────────┐            ┌──────────────────────┐
+        │     Tokenizer       │            │   Star Embedding     │
+        │  (IndoBERT BPE)     │            │   Embedding(5, 16)   │
+        │  max_len = 128      │            │   → 16-dim vector    │
+        └─────────┬───────────┘            └──────────┬───────────┘
+                  │                                   │
+                  ▼                                   │
+      ┌───────────────────────┐                       │
+      │                       │                       │
+      │   IndoBERT Encoder    │                       │
+      │   (Shared Backbone)   │                       │
+      │   768-dim hidden      │                       │
+      │   ([CLS] token)       │                       │
+      └───────────┬───────────┘                       │
+                  │                                   │
+                  ▼                                   │
+          ┌───────────────┐                           │
+          │    Dropout    │                           │
+          │    (0.3)      │                           │
+          └───────┬───────┘                           │
+                  │                                   │
+                  └──────────────┬────────────────────┘
+                                 │
+                                 ▼
+                    ┌─────────────────────────┐
+                    │    Feature Fusion        │
+                    │  Concat(768 + 16) = 784  │
+                    │  Linear(784 → 256)       │
+                    │  ReLU + Dropout(0.3)     │
+                    └────────────┬────────────┘
+                                 │
+                    ┌────────────┴────────────┐
+                    │                         │
+                    ▼                         ▼
+           ┌─────────────────┐     ┌─────────────────┐
+           │ Sentiment Head  │     │   Star Head     │
+           │  Linear(256→3)  │     │  Linear(256→5)  │
+           │                 │     │                 │
+           │ Negative        │     │ ⭐ 1            │
+           │ Neutral         │     │ ⭐⭐ 2          │
+           │ Positive        │     │ ⭐⭐⭐ 3        │
+           │                 │     │ ⭐⭐⭐⭐ 4      │
+           │                 │     │ ⭐⭐⭐⭐⭐ 5    │
+           └─────────────────┘     └─────────────────┘
 ```
 
 **Kenapa Multi-Task?** Review "Pelayanan biasa aja" mungkin diberi bintang 5 oleh user (star yang salah), tapi sentiment-nya Neutral. Dengan multi-task learning, model bisa **mengoreksi star rating** berdasarkan pemahaman konteks dan sentimen secara bersamaan — kedua task saling membantu memperkuat representasi shared encoder.
@@ -108,11 +121,11 @@ Star-Correction/
 **File:** `src/dataset.py`
 
 ```
-CSV (text, sentiment_label, corrected_star)
+CSV (text, sentiment_label, stars, corrected_star)
          │
          ▼
   ┌──────────────┐
-  │ Clean & Map  │  Drop NaN, map "Positive"→2, star 5.0→index 4
+  │ Clean & Map  │  Drop NaN, map "Positive"→2, star 5→idx 4, stars→star_input_idx
   └──────┬───────┘
          │
          ▼
@@ -150,21 +163,29 @@ CSV (text, sentiment_label, corrected_star)
 
 ```python
 class MultiTaskBERT(nn.Module):
-    def __init__(self, model_name, num_sentiment_classes=3, num_star_classes=5, dropout=0.3):
-        self.bert = BertModel.from_pretrained(model_name)       # Shared encoder
-        self.dropout = nn.Dropout(dropout)                      # Regularization
-        self.sentiment_head = nn.Linear(768, num_sentiment_classes)  # Task 1
-        self.star_head = nn.Linear(768, num_star_classes)            # Task 2
+    def __init__(self, model_name, num_sentiment_classes=3, num_star_classes=5,
+                 dropout=0.3, star_embed_dim=16, fusion_dim=256):
+        self.bert = BertModel.from_pretrained(model_name)        # Shared encoder
+        self.star_embedding = nn.Embedding(num_star_classes, star_embed_dim)  # Star input
+        self.fusion = nn.Sequential(                              # Feature fusion
+            nn.Linear(768 + star_embed_dim, fusion_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+        )
+        self.sentiment_head = nn.Linear(fusion_dim, num_sentiment_classes)    # Task 1
+        self.star_head = nn.Linear(fusion_dim, num_star_classes)              # Task 2
 
-    def forward(self, input_ids, attention_mask):
-        outputs = self.bert(input_ids, attention_mask)
-        pooled = self.dropout(outputs.pooler_output)  # [CLS] token
-        return self.sentiment_head(pooled), self.star_head(pooled)
+    def forward(self, input_ids, attention_mask, star_input):
+        pooled = self.dropout(self.bert(input_ids, attention_mask).pooler_output)
+        star_embed = self.star_embedding(star_input)   # (batch, 16)
+        fused = self.fusion(torch.cat([pooled, star_embed], dim=1))  # (batch, 256)
+        return self.sentiment_head(fused), self.star_head(fused)
 ```
 
 - **Base model:** [`indobenchmark/indobert-base-p1`](https://huggingface.co/indobenchmark/indobert-base-p1) — pre-trained BERT khusus Bahasa Indonesia
-- **Shared encoder** menghasilkan representasi 768-dim dari token `[CLS]`
-- **Dua head independen** masing-masing memprediksi task berbeda dari representasi yang sama
+- **Star Embedding** — `Embedding(5, 16)` mengubah star index (0–4) menjadi 16-dim dense vector
+- **Feature Fusion** — concat BERT [CLS] (768) + star embed (16) = 784 → Linear(784→256) + ReLU + Dropout
+- **Dua head independen** masing-masing memprediksi task dari fused representation 256-dim
 
 ### 3. Training Loop
 
@@ -173,13 +194,13 @@ class MultiTaskBERT(nn.Module):
 ```
 For each epoch:
   ┌─ Forward pass ──────────────────────────────────────┐
-  │  sentiment_logits, star_logits = model(ids, mask)   │
+  │  sentiment_logits, star_logits = model(ids, mask, star_input)│
   │                                                     │
   │  loss_sent = CrossEntropy(sentiment_logits, labels)  │
   │  loss_star = CrossEntropy(star_logits, labels)       │
   │                                                     │
   │  total_loss = α × loss_sent + β × loss_star         │
-  │               (α=0.5)          (β=0.5)              │
+  │               (α=0.7)          (β=0.3)              │
   └─────────────────────────────────────────────────────┘
                          │
                          ▼
@@ -333,7 +354,7 @@ streamlit run inference/app.py --server.port 8501
 ```bash
 curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
-  -d '{"text": "Tempat wisata yang sangat bagus dan menyenangkan!"}'
+  -d '{"text": "Tempat wisata yang sangat bagus dan menyenangkan!", "star": 5}'
 ```
 
 **Response:**
@@ -341,6 +362,7 @@ curl -X POST http://localhost:8000/predict \
 ```json
 {
   "text": "Tempat wisata yang sangat bagus dan menyenangkan!",
+  "original_star": 5,
   "sentiment": "Positive",
   "sentiment_confidence": 0.9999,
   "sentiment_probabilities": {
@@ -415,7 +437,7 @@ Prediksi single text.
 **Request:**
 
 ```json
-{ "text": "Review text here" }
+{ "text": "Review text here", "star": 5 }
 ```
 
 **Response:**
@@ -423,6 +445,7 @@ Prediksi single text.
 ```json
 {
   "text": "Review text here",
+  "original_star": 5,
   "sentiment": "Positive",
   "sentiment_confidence": 0.95,
   "sentiment_probabilities": {
@@ -450,7 +473,8 @@ Prediksi batch (max 64 texts).
 
 ```json
 {
-  "texts": ["Review 1", "Review 2", "Review 3"]
+  "texts": ["Review 1", "Review 2", "Review 3"],
+  "stars": [5, 1, 3]
 }
 ```
 
@@ -462,21 +486,23 @@ Prediksi batch (max 64 texts).
 
 Semua konfigurasi terpusat di `src/config.py` sebagai Python dataclass:
 
-| Parameter       | Default                          | Description                 |
-| --------------- | -------------------------------- | --------------------------- |
-| `model_name`    | `indobenchmark/indobert-base-p1` | Pre-trained BERT model      |
-| `max_len`       | 128                              | Max token sequence length   |
-| `epochs`        | 10                               | Maximum training epochs     |
-| `batch_size`    | 16                               | Batch size                  |
-| `learning_rate` | 2e-5                             | AdamW learning rate         |
-| `weight_decay`  | 0.01                             | L2 regularization           |
-| `dropout`       | 0.3                              | Dropout rate                |
-| `alpha`         | 0.5                              | Sentiment loss weight       |
-| `beta`          | 0.5                              | Star loss weight            |
-| `patience`      | 3                                | Early stopping patience     |
-| `warmup_ratio`  | 0.1                              | LR warmup proportion        |
-| `max_grad_norm` | 1.0                              | Gradient clipping threshold |
-| `seed`          | 42                               | Random seed                 |
+| Parameter        | Default                          | Description                   |
+| ---------------- | -------------------------------- | ----------------------------- |
+| `model_name`     | `indobenchmark/indobert-base-p1` | Pre-trained BERT model        |
+| `max_len`        | 128                              | Max token sequence length     |
+| `star_embed_dim` | 16                               | Star embedding dimension      |
+| `fusion_dim`     | 256                              | Fusion layer output dimension |
+| `epochs`         | 10                               | Maximum training epochs       |
+| `batch_size`     | 16                               | Batch size                    |
+| `learning_rate`  | 2e-5                             | AdamW learning rate           |
+| `weight_decay`   | 0.01                             | L2 regularization             |
+| `dropout`        | 0.3                              | Dropout rate                  |
+| `alpha`          | 0.7                              | Sentiment loss weight         |
+| `beta`           | 0.3                              | Star loss weight              |
+| `patience`       | 3                                | Early stopping patience       |
+| `warmup_ratio`   | 0.1                              | LR warmup proportion          |
+| `max_grad_norm`  | 1.0                              | Gradient clipping threshold   |
+| `seed`           | 42                               | Random seed                   |
 
 Override via CLI:
 

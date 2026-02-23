@@ -34,12 +34,14 @@ class MultiTaskDataset(Dataset):
         texts: list[str],
         sentiment_labels: list[int],
         star_labels: list[int],
+        star_inputs: list[int],
         tokenizer: BertTokenizer,
         max_len: int,
     ):
         self.texts = texts
         self.sentiment_labels = sentiment_labels
         self.star_labels = star_labels
+        self.star_inputs = star_inputs
         self.tokenizer = tokenizer
         self.max_len = max_len
 
@@ -64,6 +66,7 @@ class MultiTaskDataset(Dataset):
                 self.sentiment_labels[idx], dtype=torch.long
             ),
             "star_label": torch.tensor(self.star_labels[idx], dtype=torch.long),
+            "star_input": torch.tensor(self.star_inputs[idx], dtype=torch.long),
         }
 
 
@@ -82,7 +85,10 @@ def load_and_split_data(
     df = pd.read_csv(config.data_path)
 
     # Drop rows with missing target columns
-    df = df.dropna(subset=[config.text_column, config.sentiment_column, config.star_column])
+    df = df.dropna(subset=[
+        config.text_column, config.sentiment_column,
+        config.star_column, config.star_input_column,
+    ])
 
     # Keep only known sentiment labels
     df = df[df[config.sentiment_column].isin(SENTIMENT_MAP.keys())].copy()
@@ -90,9 +96,10 @@ def load_and_split_data(
     # Map labels to indices
     df["sentiment_idx"] = df[config.sentiment_column].map(SENTIMENT_MAP)
     df["star_idx"] = df[config.star_column].apply(star_to_index)
+    df["star_input_idx"] = df[config.star_input_column].apply(star_to_index)
 
     # Validate star range
-    df = df[df["star_idx"].between(0, 4)].copy()
+    df = df[df["star_idx"].between(0, 4) & df["star_input_idx"].between(0, 4)].copy()
 
     # Optional sample for smoke tests
     if config.sample_size is not None:
@@ -162,6 +169,7 @@ def build_dataloaders(
             texts=df[config.text_column].tolist(),
             sentiment_labels=df["sentiment_idx"].tolist(),
             star_labels=df["star_idx"].tolist(),
+            star_inputs=df["star_input_idx"].tolist(),
             tokenizer=tokenizer,
             max_len=config.max_len,
         )

@@ -40,10 +40,11 @@ def train_one_epoch(
         attention_mask = batch["attention_mask"].to(device)
         sentiment_labels = batch["sentiment_label"].to(device)
         star_labels = batch["star_label"].to(device)
+        star_input = batch["star_input"].to(device)
 
         optimizer.zero_grad()
 
-        sentiment_logits, star_logits = model(input_ids, attention_mask)
+        sentiment_logits, star_logits = model(input_ids, attention_mask, star_input)
 
         loss_sent = sentiment_criterion(sentiment_logits, sentiment_labels)
         loss_star = star_criterion(star_logits, star_labels)
@@ -85,8 +86,9 @@ def validate(
         attention_mask = batch["attention_mask"].to(device)
         sentiment_labels = batch["sentiment_label"].to(device)
         star_labels = batch["star_label"].to(device)
+        star_input = batch["star_input"].to(device)
 
-        sentiment_logits, star_logits = model(input_ids, attention_mask)
+        sentiment_logits, star_logits = model(input_ids, attention_mask, star_input)
 
         loss_sent = sentiment_criterion(sentiment_logits, sentiment_labels)
         loss_star = star_criterion(star_logits, star_labels)

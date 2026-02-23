@@ -45,8 +45,9 @@ def get_predictions(
     for batch in tqdm(dataloader, desc="Evaluating", leave=False):
         input_ids = batch["input_ids"].to(device)
         attention_mask = batch["attention_mask"].to(device)
+        star_input = batch["star_input"].to(device)
 
-        sentiment_logits, star_logits = model(input_ids, attention_mask)
+        sentiment_logits, star_logits = model(input_ids, attention_mask, star_input)
 
         results["sentiment_pred"].extend(
             sentiment_logits.argmax(dim=1).cpu().numpy()

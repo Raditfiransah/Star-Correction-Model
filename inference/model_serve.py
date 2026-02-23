@@ -33,6 +33,8 @@ MAX_LEN = 128
 NUM_SENTIMENT = 3
 NUM_STAR = 5
 DROPOUT = 0.3
+STAR_EMBED_DIM = 16
+FUSION_DIM = 256
 
 SENTIMENT_LABELS = ["Negative", "Neutral", "Positive"]
 STAR_LABELS = ["1", "2", "3", "4", "5"]
@@ -72,6 +74,8 @@ async def lifespan(app: FastAPI):
         num_sentiment_classes=NUM_SENTIMENT,
         num_star_classes=NUM_STAR,
         dropout=DROPOUT,
+        star_embed_dim=STAR_EMBED_DIM,
+        fusion_dim=FUSION_DIM,
     )
     state_dict = torch.load(MODEL_PATH, map_location=device, weights_only=True)
     model.load_state_dict(state_dict)
@@ -110,10 +114,18 @@ class PredictRequest(BaseModel):
         max_length=5000,
         examples=["Tempat wisata yang sangat bagus dan menyenangkan!"],
     )
+    star: int = Field(
+        ...,
+        ge=1,
+        le=5,
+        examples=[5],
+        description="Original star rating from user (1–5)",
+    )
 
 
 class PredictResponse(BaseModel):
     text: str
+    original_star: int
     sentiment: str
     sentiment_confidence: float
     sentiment_probabilities: dict[str, float]
@@ -134,6 +146,13 @@ class BatchPredictRequest(BaseModel):
             ]
         ],
     )
+    stars: list[int] = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        examples=[[5, 1]],
+        description="Original star ratings (1–5), must match length of texts",
+    )
 
 
 class HealthResponse(BaseModel):
@@ -146,8 +165,8 @@ class HealthResponse(BaseModel):
 
 
 @torch.no_grad()
-def predict_single(text: str) -> PredictResponse:
-    """Run inference on a single text string."""
+def predict_single(text: str, star: int) -> PredictResponse:
+    """Run inference on a single text string with original star rating."""
     encoding = tokenizer(
         text,
         add_special_tokens=True,
@@ -160,8 +179,9 @@ def predict_single(text: str) -> PredictResponse:
 
     input_ids = encoding["input_ids"].to(device)
     attention_mask = encoding["attention_mask"].to(device)
+    star_input = torch.tensor([star - 1], dtype=torch.long).to(device)  # 1-5 → 0-4
 
-    sentiment_logits, star_logits = model(input_ids, attention_mask)
+    sentiment_logits, star_logits = model(input_ids, attention_mask, star_input)
 
     # Sentiment
     sent_probs = F.softmax(sentiment_logits, dim=1).squeeze(0).cpu().tolist()
@@ -175,6 +195,7 @@ def predict_single(text: str) -> PredictResponse:
 
     return PredictResponse(
         text=text,
+        original_star=star,
         sentiment=sent_label,
         sentiment_confidence=round(sent_probs[sent_idx], 4),
         sentiment_probabilities={
@@ -209,7 +230,7 @@ async def predict(request: PredictRequest):
     if model is None:
         raise HTTPException(status_code=503, detail="Model not loaded yet.")
 
-    return predict_single(request.text)
+    return predict_single(request.text, request.star)
 
 
 @app.post(
@@ -221,5 +242,10 @@ async def predict_batch(request: BatchPredictRequest):
     """Predict sentiment and star rating for multiple texts (max 64)."""
     if model is None:
         raise HTTPException(status_code=503, detail="Model not loaded yet.")
+    if len(request.texts) != len(request.stars):
+        raise HTTPException(
+            status_code=422,
+            detail="texts and stars must have the same length.",
+        )
 
-    return [predict_single(text) for text in request.texts]
+    return [predict_single(t, s) for t, s in zip(request.texts, request.stars)]

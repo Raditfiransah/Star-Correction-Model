@@ -13,6 +13,7 @@ class Config:
     text_column: str = "text"
     sentiment_column: str = "sentiment_label"
     star_column: str = "corrected_star"
+    star_input_column: str = "stars"
 
     # ── Splits ────────────────────────────────────────────────────────────
     train_ratio: float = 0.8
@@ -25,6 +26,8 @@ class Config:
     num_sentiment_classes: int = 3
     num_star_classes: int = 5
     dropout: float = 0.3
+    star_embed_dim: int = 16
+    fusion_dim: int = 256
 
     # ── Training ──────────────────────────────────────────────────────────
     epochs: int = 10
@@ -35,8 +38,8 @@ class Config:
     max_grad_norm: float = 1.0
 
     # ── Multi-task loss weights ───────────────────────────────────────────
-    alpha: float = 0.5  # sentiment loss weight
-    beta: float = 0.5   # star loss weight
+    alpha: float = 0.7  # sentiment loss weight
+    beta: float = 0.3   # star loss weight
 
     # ── Early stopping ────────────────────────────────────────────────────
     patience: int = 3

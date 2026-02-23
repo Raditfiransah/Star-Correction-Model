@@ -56,6 +56,8 @@ def objective(trial: optuna.Trial, config: Config | None = None) -> float:
         num_sentiment_classes=config.num_sentiment_classes,
         num_star_classes=config.num_star_classes,
         dropout=config.dropout,
+        star_embed_dim=config.star_embed_dim,
+        fusion_dim=config.fusion_dim,
     ).to(device)
 
     # ── MLflow tracking ───────────────────────────────────────────────────

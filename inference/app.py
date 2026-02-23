@@ -102,7 +102,7 @@ with col_output:
                 try:
                     resp = requests.post(
                         f"{API_URL}/predict",
-                        json={"text": text},
+                        json={"text": text, "star": star_input},
                         timeout=30,
                     ).json()
                 except Exception as e:
